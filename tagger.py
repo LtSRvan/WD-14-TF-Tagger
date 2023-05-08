@@ -1,4 +1,5 @@
 import os
+import os
 import re
 import numpy as np
 import tensorflow as tf
@@ -31,6 +32,9 @@ parser.add_argument("--label", type=str, default="./Models/selected_tags.csv", h
 parser.add_argument("--batch_size", type=int, default=32, help="Batch size for processing images. Default is 32.")
 parser.add_argument("--general_score", type=float, default="0.5", help="Sets the minimum score of 'confidence'. Default '0.5'")
 parser.add_argument("--character_score", type=float, default="0.85", help="Sets the minimum score of 'character confidence'. Default '0.85'")
+parser.add_argument("--add_initial_keyword", type=str, help="Keyword to add at the beginning of the tags.")
+parser.add_argument("--add_final_keyword", type=str, help="Keyword to add at the end of the tags.")
+parser.add_argument("--download", action="store_true", help="Download the specified model.")
 args = parser.parse_args()
 
 LABEL_FILENAME = args.label
@@ -39,7 +43,10 @@ OUTPUT_DIRECTORY = args.output
 BATCH_SIZE = args.batch_size
 SCORE_GENERAL_THRESHOLD = args.general_score
 SCORE_CHARACTER_THRESHOLD = args.character_score
-MODEL = args.model
+MODEL = f"./Models/{args.model}"
+MODEL_NAME = args.model
+INITIAL_KEYWORD = args.add_initial_keyword
+FINAL_KEYWORD = args.add_final_keyword
 
 if args.output is None:
     OUTPUT_DIRECTORY = IMAGES_DIRECTORY
@@ -55,6 +62,49 @@ def download_files():
     if not os.path.exists(LABEL_FILENAME):
         print(f"Downloading {LABEL_FILENAME}...")
         download_file(LABEL_URL, LABEL_FILENAME)
+
+def download_model():
+    model_urls = {
+        "SwinV2": [
+            "https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2/resolve/main/saved_model.pb",
+            "https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2/resolve/main/variables/variables.data-00000-of-00001",
+            "https://huggingface.co/SmilingWolf/wd-v1-4-swinv2-tagger-v2/resolve/main/variables/variables.index",
+        ],
+        "ConvNext": [
+            "https://huggingface.co/SmilingWolf/wd-v1-4-convnext-tagger-v2/resolve/main/saved_model.pb",
+            "https://huggingface.co/SmilingWolf/wd-v1-4-convnext-tagger-v2/resolve/main/variables/variables.data-00000-of-00001",
+            "https://huggingface.co/SmilingWolf/wd-v1-4-convnext-tagger-v2/resolve/main/variables/variables.index",
+        ],
+        "ConvNextV2": [
+            "https://huggingface.co/SmilingWolf/wd-v1-4-convnextv2-tagger-v2/resolve/main/saved_model.pb",
+            "https://huggingface.co/SmilingWolf/wd-v1-4-convnextv2-tagger-v2/resolve/main/variables/variables.data-00000-of-00001",
+            "https://huggingface.co/SmilingWolf/wd-v1-4-convnextv2-tagger-v2/resolve/main/variables/variables.index",
+        ],
+        "ViTv2": [
+            "https://huggingface.co/SmilingWolf/wd-v1-4-vit-tagger-v2/resolve/main/saved_model.pb"
+            "https://huggingface.co/SmilingWolf/wd-v1-4-vit-tagger-v2/resolve/main/variables/variables.data-00000-of-00001"
+            "https://huggingface.co/SmilingWolf/wd-v1-4-vit-tagger-v2/resolve/main/variables/variables.index"
+        ],
+    }
+
+    if MODEL_NAME not in model_urls:
+        print(f"Model {MODEL_NAME} is not supported for downloading.")
+        return
+
+    model_folder = os.path.join("Models", MODEL_NAME)
+    variables_folder = os.path.join(model_folder, "variables")
+
+    if not os.path.exists(model_folder):
+        os.makedirs(model_folder)
+
+    if not os.path.exists(variables_folder):
+        os.makedirs(variables_folder)
+
+    for url in model_urls[MODEL_NAME]:
+        filename = os.path.basename(url)
+        file_path = os.path.join(variables_folder, filename) if "variables" in filename else os.path.join(model_folder, filename)
+        print(f"Downloading {filename}...")
+        urllib.request.urlretrieve(url, file_path)
 
 def load_labels() -> list[str]:
     df = pd.read_csv(LABEL_FILENAME)
@@ -121,12 +171,21 @@ def predict(
             .replace("_", " ")
             .replace("(", "\(")
             .replace(")", "\)")
+            .replace(", ,", ",")
         )
         a = re.sub(r'\\?\([^)]*\)', '', a)
         c = ", ".join(list(b.keys()))
         character_tags = ', '.join(list(character_res.keys())).replace('_', ' ')
         character_tags = re.sub(r'\([^)]*\)', '', character_tags)
-        result = f"{character_tags}, {a}"
+
+        if INITIAL_KEYWORD and FINAL_KEYWORD:
+            result = f"{INITIAL_KEYWORD}, {character_tags}, {a}, {FINAL_KEYWORD}"
+        elif INITIAL_KEYWORD:
+            result = f"{INITIAL_KEYWORD}, {character_tags}, {a}"
+        elif FINAL_KEYWORD:
+            result = f"{character_tags}, {a}, {FINAL_KEYWORD}"
+        else:
+            result = f"{character_tags}, {a}"
         result = re.sub(r'\s*,\s*', ', ', result)
         
         results.append(result)
@@ -134,6 +193,8 @@ def predict(
     return results
 
 def main():
+    if args.download:
+        download_model()
     model = tf.saved_model.load(MODEL)
     
     tag_names, rating_indexes, general_indexes, character_indexes = load_labels()
@@ -141,7 +202,7 @@ def main():
     if not os.path.exists(OUTPUT_DIRECTORY):
         os.makedirs(OUTPUT_DIRECTORY)
 
-    image_paths = [os.path.join(IMAGES_DIRECTORY, f) for f in os.listdir(IMAGES_DIRECTORY) if f.endswith(".jpg") or f.endswith(".png")]
+    image_paths = [os.path.join(IMAGES_DIRECTORY, f) for f in os.listdir(IMAGES_DIRECTORY) if f.endswith(".jpg") or f.endswith(".png") or f.endswith(".webp")]
 
     for i in range(0, len(image_paths), BATCH_SIZE):
         batch_image_paths = image_paths[i:i + BATCH_SIZE]
