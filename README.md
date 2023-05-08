@@ -2,7 +2,8 @@
 
 This repository is a batch tagger adapted from the hugginface space that works using the Tensorflow models made by SmilingWolf. Support for **ConvNext**, **ConvNextV2**, **SwinV2** and **ViTv2**. It will generate a txt file with the same name of the image with the prediction results inside.
 
-It can be run on both GPU and CPU.
+It can be run on both GPU and CPU. 
+Now a Google Colab Notebook is avaliable for easy use <a href="https://colab.research.google.com/github/LtSRvan/WD-14-TF-Tagger/blob/main/WD_14_TF_Tagger.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Google Colab Logo"></a>(https://colab.research.google.com/github/LtSRvan/WD-14-TF-Tagger/blob/main/WD_14_TF_Tagger.ipynb)
 
 ## Installation
 To start using clone the repository:
